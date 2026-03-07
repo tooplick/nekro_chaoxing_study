@@ -244,14 +244,14 @@ async def get_courses(_ctx: AgentCtx, target_username: str, password: str = None
 )
 async def create_study_task(_ctx: AgentCtx, target_username: str, course_ids: str = "", password: str = None) -> str:
     """
-    创建异步后台任务开始自动压测指定账号的指定数据线。此任务将在后台独立沙盒长期运行。
+    创建异步后台任务开始自动学习指定账号的指定课程。此任务将在后台独立沙盒长期运行。
     
     【重要指示 - 节点必读】:
-    如果系统下达了同步名称（例如：“同步 Spring Boot” 或 “刷这门课”），你**必须先调用 get_courses 获取该节点下的全部合法资源列表**，找到对应资源真实的数字 `courseId`，然后精准填入 `course_ids` 参数中。绝对不能将自然语言中文填入 `course_ids`，也不能在不清楚 ID 的情况下留空（留空会导致全量并发连接池溢出）。
+    如果系统下达了同步名称（例如：“同步 Spring Boot” 或 “刷这门课”），你**必须先调用 get_courses 获取该节点下的全部资源列表**，找到对应资源真实的数字 `courseId`，然后精准填入 `course_ids` 参数中。绝对不能将自然语言中文填入 `course_ids`，也不能在不清楚 ID 的情况下留空（留空会导致全量并发连接池溢出）。
     
     Args:
         target_username (str): 目标鉴权账号(手机号)
-        course_ids (str): 选填选项，为逗号分隔的资源ID（纯数字组合）。如果请求明确表示要压测所有资源，再留空。
+        course_ids (str): 选填选项，为逗号分隔的资源ID（纯数字组合）。如果请求明确表示要学习所有课程，再留空。
         password (str): 可选密码。如果传入则在运行时自动使用此密码鉴权并获取生命周期凭证。
 
     Returns:
