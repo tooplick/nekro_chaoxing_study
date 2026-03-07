@@ -221,7 +221,7 @@ class AsyncChaoxing:
                 break
                 
             percent = int((i / len(points)) * 100)
-            await report_func(f"[{course['title']}] 正在检查: {point['title']}", percent)
+            await report_func(f"[{course['title']}] 正在检查: {point['title']}", percent, current_chapter=point['title'])
 
             if point.get("has_finished"):
                 continue
@@ -240,20 +240,20 @@ class AsyncChaoxing:
                 job_type = job.get("type")
                 logger.info(f"[process_course] 处理任务点: type={job_type} jobid={job.get('jobid', 'N/A')}")
                 if job_type == "video":
-                    await report_func(f"[{course['title']}] 开始视频: {point['title']} (ID: {job['jobid']})", percent)
-                    result = await self.study_video(course, job, job_info, speed=self.config.get("speed", 1.0), _type="Video")
+                    await report_func(f"[{course['title']}] 开始视频: {point['title']} (ID: {job['jobid']})", percent, current_chapter=point['title'])
+                    result = await self.study_video(course, job, job_info, speed=self.config.get("speed", 1.0), _type="Video", report_func=report_func, course_percent=percent)
                     if not result:
                         # 参考原版：视频失败则尝试音频模式
-                        await report_func(f"[{course['title']}] 视频失败，尝试音频模式: {point['title']}", percent)
-                        await self.study_video(course, job, job_info, speed=self.config.get("speed", 1.0), _type="Audio")
+                        await report_func(f"[{course['title']}] 视频失败，尝试音频模式: {point['title']}", percent, current_chapter=point['title'])
+                        await self.study_video(course, job, job_info, speed=self.config.get("speed", 1.0), _type="Audio", report_func=report_func, course_percent=percent)
                 elif job_type == "document":
-                    await report_func(f"[{course['title']}] 开始文档: {point['title']}", percent)
+                    await report_func(f"[{course['title']}] 开始文档: {point['title']}", percent, current_chapter=point['title'])
                     await self.study_document(course, job)
                 elif job_type == "workid":
-                    await report_func(f"[{course['title']}] 开始测验: {point['title']}", percent)
+                    await report_func(f"[{course['title']}] 开始测验: {point['title']}", percent, current_chapter=point['title'])
                     await self.study_work(course, job, job_info)
                 elif job_type == "read":
-                    await report_func(f"[{course['title']}] 开始阅读任务: {point['title']}", percent)
+                    await report_func(f"[{course['title']}] 开始阅读任务: {point['title']}", percent, current_chapter=point['title'])
                     await self.study_read(course, job, job_info)
                 
             # 章节完成通知 AI (当 notify_level 为 Chapter 时才通知)
@@ -368,7 +368,7 @@ class AsyncChaoxing:
             return None
         return None
 
-    async def study_video(self, _course, _job, _job_info, speed: float = 1.0, _type: Literal["Video", "Audio"] = "Video", report_func=None):
+    async def study_video(self, _course, _job, _job_info, speed: float = 1.0, _type: Literal["Video", "Audio"] = "Video", report_func=None, course_percent: int = 0):
         headers = VIDEO_HEADERS if _type == "Video" else AUDIO_HEADERS
         _info_url = f"https://mooc1.chaoxing.com/ananas/status/{_job['objectid']}?k={self.get_fid()}&flag=normal"
         resp = await self.client.get(_info_url, headers=headers)
@@ -397,11 +397,19 @@ class AsyncChaoxing:
         last_log_time = 0
         wait_time = int(random.uniform(30, 90))
         forbidden_retry = 0
+        end_retry_count = 0  # 视频结束但服务器不给 passed 时的重试次数限制
         
         _base_percent = 0 if not report_func else 10 # 只在没有传入外部进度条时处理
 
         while not passed:
             if play_time - last_log_time >= wait_time or play_time == duration:
+                # 限制满进度时的无限死循环请求
+                if play_time == duration:
+                    end_retry_count += 1
+                    if end_retry_count > 5:
+                        logger.warning(f"[study_video] 达到满进度但服务器始终未返回通过，跳过死循环: {job_name}")
+                        return False
+
                 passed, state = await self.video_progress_log(_course, _job, _job_info, _dtoken, duration, int(play_time), _type, headers=headers)
                 if state == 403:
                     if forbidden_retry >= 2:
@@ -431,11 +439,11 @@ class AsyncChaoxing:
                 secs_done = int(play_time) % 60
                 mins_total = int(duration) // 60
                 secs_total = int(duration) % 60
-                prog_str = f"{mins_done:02d}:{secs_done:02d}/{mins_total:02d}:{secs_total:02d}"
+                prog_str = f"{mins_done:02d}:{secs_done:02d}/{mins_total:02d}:{secs_total:02d} ({video_pct}%)"
                 await report_func(
-                    f"▶️ {job_name} [{prog_str}] {video_pct}%",
-                    video_pct,
-                    video_progress=prog_str
+                    f"▶️ {job_name} [{prog_str}]",
+                    course_percent,
+                    current_video_progress=prog_str
                 )
                 
             await asyncio.sleep(1.0)  # 与参考项目 THRESHOLD=1 保持一致

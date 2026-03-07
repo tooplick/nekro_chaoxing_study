@@ -350,12 +350,14 @@ async def list_study_tasks(_ctx: AgentCtx = None) -> str:
             line = f"{icon} 任务ID: {t.task_id} | 用户: {t.username} | 课程: {t.course_ids or '所有'} | 状态: {t.status}"
             
             if t.status == "running":
-                line += f"\n   {_progress_bar(t.progress)} {t.progress}%"
-                if t.total_courses > 0:
-                    line += f" | 课程进度: {t.finished_courses}/{t.total_courses}"
-                if t.detail:
-                    line += f"\n   📝 {t.detail}"
-                line += f" | 已运行: {t.elapsed_formatted()}"
+                line += f"\n   ► 总进度: {_progress_bar(t.progress)} {t.progress}%"
+                if t.current_course:
+                    line += f"\n   ► 当前课程: {t.current_course}"
+                if t.current_chapter:
+                    line += f"\n   ► 当前章节: {t.current_chapter}"
+                if t.current_video_progress:
+                    line += f"\n   ► 视频进度: {t.current_video_progress}"
+                line += f"\n   ► 已运行: {t.elapsed_formatted()}"
             elif t.status == "success":
                 line += f" | 用时: {t.elapsed_formatted()}"
             elif t.status == "failed" and t.error:
@@ -452,14 +454,14 @@ async def get_running_tasks(_ctx: AgentCtx = None) -> str:
         for t in running_tasks:
             icon = _status_icon(t.status)
             line = f"{icon} 任务ID: {t.task_id} | 用户: {t.username} | 课程: {t.course_ids or '所有'}"
-            line += f"\n   {_progress_bar(t.progress)} {t.progress}%"
-            if t.total_courses > 0:
-                line += f" | 课程进度: {t.finished_courses}/{t.total_courses}"
+            line += f"\n   ► 总进度: {_progress_bar(t.progress)} {t.progress}%"
+            if t.current_course:
+                line += f"\n   ► 当前课程: {t.current_course}"
+            if t.current_chapter:
+                line += f"\n   ► 当前章节: {t.current_chapter}"
             if t.current_video_progress:
-                line += f" | 📺视频进度: {t.current_video_progress}"
-            if t.detail:
-                line += f"\n   📝 {t.detail}"
-            line += f" | 已运行: {t.elapsed_formatted()}"
+                line += f"\n   ► 视频进度: {t.current_video_progress}"
+            line += f"\n   ► 已运行: {t.elapsed_formatted()}"
             is_alive = task.is_running("course_study_task", t.task_id)
             line += f" | {'🟢 运行中' if is_alive else '🔴 已停止'}"
             res.append(line)
@@ -485,18 +487,20 @@ async def study_status_inject(_ctx: AgentCtx) -> str:
     
     running = [t for t in tasks if t.status in ("pending", "running")]
     
-    lines = [f"[超星学习助手] 活跃任务: {len(running)}/{len(tasks)}"]
+    lines = [f"[超星学习助手] 活跃任务状态 (请严格提取字段，切勿将底层日志中的 mp4 当作课程名): {len(running)}/{len(tasks)}"]
     for t in tasks[:5]:
         icon = _status_icon(t.status)
         desc = f"{t.username} {t.course_ids or '全部课程'}"
         lines.append(f"  {icon} task_id={t.task_id} | {desc}")
         
-        if t.status == "running" and t.detail:
-            progress_line = f"     {_progress_bar(t.progress)} {t.progress}%"
+        if t.status == "running":
+            lines.append(f"     - 总进度: {_progress_bar(t.progress)} {t.progress}%")
+            if t.current_course:
+                lines.append(f"     - 课程: {t.current_course}")
+            if t.current_chapter:
+                lines.append(f"     - 章节: {t.current_chapter}")
             if t.current_video_progress:
-                progress_line += f" | 视频进度: {t.current_video_progress}"
-            progress_line += f" | {t.detail}"
-            lines.append(progress_line)
+                lines.append(f"     - 视频: {t.current_video_progress}")
         if t.status == "failed" and t.error:
             err = t.error[:40] + "..." if len(t.error) > 40 else t.error
             lines.append(f"     └─ 错误: {err}")
@@ -572,12 +576,12 @@ async def _course_study_task(
                 finished_courses=ci,
             )
             
-            async def report_func(msg, pct, video_progress=None):
+            async def report_func(msg, pct, **kwargs):
                 task_manager.update_status(
                     chat_key, tid, "running", 
                     progress=pct, 
                     detail=msg, 
-                    current_video_progress=video_progress or ""
+                    **kwargs
                 )
                 await handle.notify_agent(f"[{target_username}] {msg} ({pct}%)", trigger=False)
 

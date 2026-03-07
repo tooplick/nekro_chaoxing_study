@@ -35,6 +35,7 @@ class StudyTask:
     total_courses: int = 0
     finished_courses: int = 0
     current_course: str = ""
+    current_chapter: str = ""
     current_video_progress: str = ""
 
     def elapsed_seconds(self) -> float:
@@ -98,6 +99,7 @@ class TaskManager:
         detail: str = "",
         error: Optional[str] = None,
         current_course: str = "",
+        current_chapter: str = "",
         total_courses: int = -1,
         finished_courses: int = -1,
         current_video_progress: str = ""
@@ -117,6 +119,8 @@ class TaskManager:
             task.error = error
         if current_course is not None:
             task.current_course = current_course
+        if current_chapter is not None:
+            task.current_chapter = current_chapter
         if current_video_progress is not None:
             task.current_video_progress = current_video_progress
         if total_courses >= 0:
