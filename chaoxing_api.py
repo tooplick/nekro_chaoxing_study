@@ -141,19 +141,27 @@ class AsyncChaoxing:
         return None
 
     async def get_course_list(self) -> list[dict]:
+        from nekro_agent.api.core import logger
         _url = "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/courselistdata"
         _data = {"courseType": 1, "courseFolderId": 0, "query": "", "superstarClass": 0}
         _headers = {
             "Referer": "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/interaction?moocDomain=https://mooc1-1.chaoxing.com/mooc-ans",
         }
+        logger.info("[get_course_list] 正在请求主课程列表...")
         _resp = await self.client.post(_url, headers=_headers, data=_data)
+        logger.info(f"[get_course_list] 主课程列表响应: status={_resp.status_code}, len={len(_resp.text)}")
         course_list = decode_course_list(_resp.text)
+        logger.info(f"[get_course_list] 主目录解析到 {len(course_list)} 门课程")
 
         _interaction_url = "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/interaction"
+        logger.info("[get_course_list] 正在请求课程文件夹列表...")
         _interaction_resp = await self.client.get(_interaction_url)
+        logger.info(f"[get_course_list] 文件夹列表响应: status={_interaction_resp.status_code}, len={len(_interaction_resp.text)}")
         course_folder = decode_course_folder(_interaction_resp.text)
+        logger.info(f"[get_course_list] 发现 {len(course_folder)} 个课程文件夹")
         
-        for folder in course_folder:
+        for fi, folder in enumerate(course_folder):
+            logger.info(f"[get_course_list] 正在请求文件夹 {fi+1}/{len(course_folder)}: {folder.get('rename', folder['id'])}")
             _data = {
                 "courseType": 1,
                 "courseFolderId": folder["id"],
@@ -161,8 +169,11 @@ class AsyncChaoxing:
                 "superstarClass": 0,
             }
             _resp = await self.client.post(_url, data=_data)
-            course_list += decode_course_list(_resp.text)
+            folder_courses = decode_course_list(_resp.text)
+            logger.info(f"[get_course_list] 文件夹 {fi+1} 解析到 {len(folder_courses)} 门课程")
+            course_list += folder_courses
             
+        logger.info(f"[get_course_list] 总计获取 {len(course_list)} 门课程")
         return course_list
 
     async def get_course_point(self, _courseid, _clazzid, _cpi):

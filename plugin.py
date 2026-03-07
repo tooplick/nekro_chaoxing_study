@@ -203,7 +203,7 @@ def _progress_bar(percent: int, width: int = 10) -> str:
 
 
 @plugin.mount_sandbox_method(
-    SandboxMethodType.TOOL, 
+    SandboxMethodType.AGENT, 
     name="get_courses", 
     description="获取指定节点服务器（用户）下属的所有可用资源列表（API连通性测试必备前置）"
 )
@@ -219,8 +219,11 @@ async def get_courses(_ctx: AgentCtx, target_username: str, password: str = None
         str: 包含所有课程信息（课程名称、课程ID等）格式化的字符串
     """
     try:
+        logger.info(f"[get_courses] 开始获取 {target_username} 的课程列表...")
         client = await _get_client_for_user(_ctx.from_chat_key, target_username, password=password)
+        logger.info(f"[get_courses] 客户端就绪，正在调用 get_course_list...")
         courses = await client.get_course_list()
+        logger.info(f"[get_courses] 获取到 {len(courses)} 门课程")
         
         if not courses:
             await client.close()
@@ -234,6 +237,8 @@ async def get_courses(_ctx: AgentCtx, target_username: str, password: str = None
         return chr(10).join(output)
         
     except Exception as e:
+        import traceback
+        logger.error(f"[get_courses] 获取课程失败: {e}\n{traceback.format_exc()}")
         return f"获取课程失败: {str(e)}"
 
 
@@ -247,8 +252,7 @@ async def create_study_task(_ctx: AgentCtx, target_username: str, course_ids: st
     创建异步后台任务开始自动学习指定账号的指定课程。此任务将在后台独立沙盒长期运行。
     
     【重要指示 - 节点必读】:
-    如果系统下达了同步名称（例如：“同步 Spring Boot” 或 “刷这门课”），你**必须先调用 get_courses 获取该节点下的全部资源列表**，找到对应资源真实的数字 `courseId`，然后精准填入 `course_ids` 参数中。绝对不能将自然语言中文填入 `course_ids`，也不能在不清楚 ID 的情况下留空（留空会导致全量并发连接池溢出）。
-    
+    如果系统下达了同步名称（例如：“同步 Spring Boot” 或 “刷这门课”），你**必须先调用 get_courses 获取该节点下的全部资源列表**，找到对应资源真实的数字 `courseId`，然后精准填入 `course_ids` 参数中。绝对不能将自然语言中文填入 `course_ids`
     Args:
         target_username (str): 目标鉴权账号(手机号)
         course_ids (str): 选填选项，为逗号分隔的资源ID（纯数字组合）。如果请求明确表示要学习所有课程，再留空。

@@ -98,11 +98,11 @@ class TaskManager:
         progress: int = -1,
         detail: str = "",
         error: Optional[str] = None,
-        current_course: str = "",
-        current_chapter: str = "",
+        current_course: Optional[str] = None,
+        current_chapter: Optional[str] = None,
         total_courses: int = -1,
         finished_courses: int = -1,
-        current_video_progress: str = ""
+        current_video_progress: Optional[str] = None
     ) -> bool:
         """统一状态更新接口"""
         task = self.get_task(chat_key, task_id)
