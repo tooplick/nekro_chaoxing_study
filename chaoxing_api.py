@@ -488,9 +488,6 @@ class AsyncChaoxing:
         return _resp.status_code == 200
 
     async def study_work(self, _course, _job, _job_info, report_func=None):
-        if not self.tiku:
-            return True
-
         # Retry wrap
         _url = "https://mooc1.chaoxing.com/mooc-ans/api/work"
         _params = {
@@ -528,11 +525,21 @@ class AsyncChaoxing:
         total_questions = len(questions["questions"])
         found_answers = 0
         
-        if report_func: await report_func(f"[{_course['title']}] 正在AI答题，共 {total_questions} 题", 0)
+        has_ai = self.tiku is not None
+        mode_label = "AI答题" if has_ai else "随机答题(无AI模型组)"
+        if report_func: await report_func(f"[{_course['title']}] 正在{mode_label}，共 {total_questions} 题", 0)
 
         for i, q in enumerate(questions["questions"]):
             await asyncio.sleep(1.0)
-            res = await self.tiku.query(q["title"], q["options"], q["type"])
+            
+            # 尝试 AI 答题，无 tiku 或请求失败时回退到随机答案
+            res = None
+            if has_ai:
+                try:
+                    res = await self.tiku.query(q["title"], q["options"], q["type"])
+                except Exception:
+                    res = None
+            
             answer = ""
             if not res or not res.get("success"):
                 import random
