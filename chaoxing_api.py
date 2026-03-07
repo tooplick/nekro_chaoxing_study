@@ -54,7 +54,13 @@ class AsyncChaoxing:
 
     def __init__(self, cookies: dict = None):
         import httpx
-        self.client = httpx.AsyncClient(headers=HEADERS, cookies=cookies, timeout=30.0, follow_redirects=True)
+        self.client = httpx.AsyncClient(
+            headers=HEADERS,
+            cookies=cookies,
+            timeout=30.0,
+            follow_redirects=True,
+            limits=httpx.Limits(max_connections=50, max_keepalive_connections=10),
+        )
         
         # 增加网络请求重试机制的简单包装
         _orig_get = self.client.get

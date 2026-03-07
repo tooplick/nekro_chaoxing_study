@@ -218,6 +218,7 @@ async def get_courses(_ctx: AgentCtx, target_username: str, password: str = None
     Returns:
         str: 包含所有课程信息（课程名称、课程ID等）格式化的字符串
     """
+    client = None
     try:
         logger.info(f"[get_courses] 开始获取 {target_username} 的课程列表...")
         client = await _get_client_for_user(_ctx.from_chat_key, target_username, password=password)
@@ -226,20 +227,24 @@ async def get_courses(_ctx: AgentCtx, target_username: str, password: str = None
         logger.info(f"[get_courses] 获取到 {len(courses)} 门课程")
         
         if not courses:
-            await client.close()
             return f"用户 {target_username} 没有检索到任何课程。"
             
         output = [f"【{target_username} 的课程列表】"]
         for i, c in enumerate(courses):
             output.append(f"{i+1}. {c['title']} (ID: {c['courseId']}, clazzId: {c['clazzId']}, cpi: {c.get('cpi','')})")
             
-        await client.close()
         return chr(10).join(output)
         
     except Exception as e:
         import traceback
         logger.error(f"[get_courses] 获取课程失败: {e}\n{traceback.format_exc()}")
         return f"获取课程失败: {str(e)}"
+    finally:
+        if client:
+            try:
+                await client.close()
+            except Exception:
+                pass
 
 
 @plugin.mount_sandbox_method(
@@ -530,6 +535,7 @@ async def _course_study_task(
     yield TaskCtl.report_progress(f"[{target_username}] 正在初始化学习环境...", 0)
     task_manager.update_status(chat_key, tid, "running", progress=0, detail="正在初始化学习环境...")
     
+    client = None  # 确保 finally 中可以安全引用
     try:
         import traceback
         logger.info(f"[异步任务] 开始初始化 | 用户={target_username} | 课程={course_ids or '所有'} | task_id={tid}")
@@ -617,3 +623,11 @@ async def _course_study_task(
         logger.error(f"[异步任务] Traceback:\n{tb}")
         task_manager.update_status(chat_key, tid, "failed", error=err_detail, detail=f"异常崩溃: {err_detail}")
         yield TaskCtl.fail(f"异常崩溃: {err_detail}")
+    finally:
+        # 确保 httpx.AsyncClient 连接池被释放，防止连接泄漏导致后续任务 ConnectError
+        if client:
+            try:
+                await client.close()
+                logger.info(f"[异步任务] 客户端已关闭 | task_id={tid}")
+            except Exception:
+                pass
