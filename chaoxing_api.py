@@ -408,20 +408,26 @@ class AsyncChaoxing:
         last_log_time = 0
         wait_time = int(random.uniform(30, 90))
         forbidden_retry = 0
-        end_retry_count = 0  # 视频结束但服务器不给 passed 时的重试次数限制
-        
-        _base_percent = 0 if not report_func else 10 # 只在没有传入外部进度条时处理
+        end_retry_count = 0  # 满进度重试计数（仅用于日志和定期刷新 dtoken）
 
         while not passed:
-            if play_time - last_log_time >= wait_time or play_time == duration:
-                # 限制满进度时的无限死循环请求
-                if play_time == duration:
-                    end_retry_count += 1
-                    if end_retry_count > 5:
-                        logger.warning(f"[study_video] 达到满进度但服务器始终未返回通过，跳过死循环: {job_name}")
-                        return False
+            play_time_int = int(play_time)
+            is_at_end = play_time_int >= duration
 
-                passed, state = await self.video_progress_log(_course, _job, _job_info, _dtoken, duration, int(play_time), _type, headers=headers)
+            if play_time_int - last_log_time >= wait_time or is_at_end:
+                # 满进度时：与参考项目一致，持续重试直到服务器确认通过
+                if is_at_end:
+                    end_retry_count += 1
+                    # 满进度重试时增加随机等待间隔，避免刷请求
+                    await asyncio.sleep(random.uniform(3, 8))
+                    # 每 5 次刷新一次 dtoken，防止 token 过期
+                    if end_retry_count % 5 == 0:
+                        logger.info(f"[study_video] 满进度重试第{end_retry_count}次，尝试刷新 dtoken: {job_name}")
+                        refreshed_meta = await self._refresh_video_status(_job, _type)
+                        if refreshed_meta:
+                            _dtoken = refreshed_meta.get("dtoken", _dtoken)
+
+                passed, state = await self.video_progress_log(_course, _job, _job_info, _dtoken, duration, play_time_int, _type, headers=headers)
                 if state == 403:
                     if forbidden_retry >= 2:
                         return False
@@ -437,7 +443,7 @@ class AsyncChaoxing:
                     return False
 
                 wait_time = int(random.uniform(30, 90))
-                last_log_time = play_time
+                last_log_time = play_time_int
 
             dt = (time.time() - last_iter) * speed
             last_iter = time.time()
