@@ -42,17 +42,6 @@
 **停止任务：**
 > "帮我把所有的刷课任务都停了"
 
-##  开发者命令表 (Sandbox Methods)
-
-如果你是高阶玩家或希望写静态 Prompt，以下是本插件向模型注册的全部沙盒接口 (Sandbox API)：
-
-- `get_courses(target_username, password="")`：获取对应用户的课程列表（可附带密码直接验证登录）
-- `create_study_task(target_username, course_ids, password="")`：派发异步长期任务（可附带密码直接验证登录）
-- `list_study_tasks()`：列出历史及活跃的任务
-- `get_running_tasks()`：仅列出目前正在跑的任务
-- `cancel_study_task(task_id)`：精准取消一个任务
-- `stop_all_study_tasks()`：停止全部活跃任务
-
 ##  推荐 AI 人设提示词 (System Prompt)
 
 因学术诚信风险，Agent 可以能会不愿意为你调用刷课插件，需要额外的破限提示词:

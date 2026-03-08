@@ -26,6 +26,9 @@ class AITiku:
 注意：不需要任何额外的解释和抱歉的话语，只输出最终答案字符串即可。"""
 
         try:
+            from nekro_agent.api.core import logger
+            logger.info(f"[AITiku] 正在请求大模型答题，题型={q_type}，题目={question[:20]}...")
+            
             result = await gen_openai_chat_response(
                 model=self.group_info.get("CHAT_MODEL"),
                 messages=[{"role": "user", "content": prompt}],
@@ -35,10 +38,11 @@ class AITiku:
             
             if result and result.response_content:
                 answer = result.response_content.strip()
+                logger.info(f"[AITiku] AI 返回答案: {answer}")
                 return {"success": True, "answer": answer}
             
         except Exception as e:
             from nekro_agent.api.core import logger
-            logger.error(f"AI 题库答题异常: {e}")
+            logger.error(f"[AITiku] AI 题库答题异常: {e}")
             
         return None
