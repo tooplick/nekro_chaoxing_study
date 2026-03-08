@@ -737,20 +737,25 @@ class AsyncChaoxing:
             "Sec-Fetch-Site": "same-origin",
             "Sec-Fetch-Mode": "cors",
             "Sec-Fetch-Dest": "empty",
+            "Referer": str(resp.url),
         }
         
-        resp = await self.client.post(post_url, data=questions, headers=post_headers)
+        logger.info(f"[study_work] 准备 {action_name} 测验，共 {total_questions} 题。使用URL: {post_url}")
+        logger.debug(f"[study_work] {action_name} 请求数据(部分): pyFlag={questions.get('pyFlag')} form_keys_count={len(questions)}")
         
-        if resp.status_code == 200:
-            res_json = resp.json()
+        resp_post = await self.client.post(post_url, data=questions, headers=post_headers)
+        
+        if resp_post.status_code == 200:
+            res_json = _safe_json(resp_post)
             if res_json.get("status"):
                 if report_func: await report_func(f"[{_course['title']}] 测验{action_name}成功: {res_json.get('msg', '')}", 100)
                 return True
             else:
-                logger.error(f"测验{action_name}失败: {res_json.get('msg', '')}")
+                logger.error(f"测验{action_name}失败: {res_json.get('msg', '未知错误')} | HTTP状态: 200 | Payload keys: {list(questions.keys())}")
                 if report_func: await report_func(f"[{_course['title']}] 测验{action_name}失败: {res_json.get('msg', '')}", 100)
                 return False
                 
+        logger.error(f"测验{action_name}遇到网络错误: HTTP {resp_post.status_code}")
         if report_func: await report_func(f"[{_course['title']}] 测验{action_name}遇到网络错误", 100)
         return False
 
