@@ -547,7 +547,8 @@ class AsyncChaoxing:
                 return answer
 
             if q_type == "multiple":
-                _op_list = [o for o in re.split(r'[\n,，|\r\t#*\-_+@~/\.\&、]', q_options) if o.strip()]
+                # 按换行符分割选项
+                _op_list = [o.strip() for o in re.split(r'[\n\r]', q_options) if o.strip()]
                 if not _op_list:
                     return answer
                 available_options = len(_op_list)
@@ -572,16 +573,22 @@ class AsyncChaoxing:
                     select_count = random.choices(possible_counts, weights=weights, k=1)[0]
                 selected_options = random.sample(_op_list, select_count) if select_count > 0 else []
                 for option in selected_options:
-                    answer += option[:1]
+                    # 提取选项字母（第一个字符）
+                    answer += option[0] if option else ''
                 answer = "".join(sorted(answer))
             elif q_type == "single":
-                answer = random.choice(q_options.split("\n"))[:1]
+                # 按换行符分割，随机选择一个选项，取其首字母
+                options_list = [o.strip() for o in re.split(r'[\n\r]', q_options) if o.strip()]
+                if options_list:
+                    answer = random.choice(options_list)[0] if options_list[0] else ''
             elif q_type == "judgement":
                 answer = "true" if random.choice([True, False]) else "false"
             return answer
 
         def multi_cut(answer: str):
-            res = [o for o in re.split(r'[\n,，|\r\t#*\-_+@~/\.\&、\s]', answer) if o.strip()]
+            """切割选项字符串，返回每个选项的完整文本（包含选项字母）"""
+            # 按换行符分割选项
+            res = [o.strip() for o in re.split(r'[\n\r]', answer) if o.strip()]
             if not res:
                 return None
             return res
@@ -681,7 +688,8 @@ class AsyncChaoxing:
                         for _a in clean_res(res_list):
                             for o in options_list:
                                 if is_subsequence(_a, o):
-                                    answer += o[:1]
+                                    # 提取选项字母（第一个字符）
+                                    answer += o[0] if o else ''
                                     break
                         answer = "".join(sorted(answer))
                 elif q["type"] == "single":
@@ -692,7 +700,8 @@ class AsyncChaoxing:
                         logger.info(f"[study_work] clean_res 后：t_res={t_res}")
                         for o in options_list:
                             if t_res and is_subsequence(t_res[0], o):
-                                answer = o[:1]
+                                # 提取选项字母（第一个字符）
+                                answer = o[0] if o else ''
                                 logger.info(f"[study_work] 匹配成功：{t_res[0]} in {o} -> answer={answer}")
                                 break
                         if not answer:
