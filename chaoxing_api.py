@@ -778,20 +778,9 @@ class AsyncChaoxing:
         }
         
         logger.info(f"[study_work] 准备 {action_name} 测验，共 {total_questions} 题。使用URL: {post_url}")
-        logger.info(f"[study_work] pyFlag={questions.get('pyFlag')!r}")
-        answer_keys = [k for k in questions.keys() if k.startswith('answer') and k != 'answerwqbid']
-        logger.info(f"[study_work] 答案数量：{len(answer_keys)}, 示例：{answer_keys[:3]}")
-        for ak in answer_keys[:3]:
-            logger.info(f"[study_work] {ak}={questions.get(ak, 'N/A')!r}")
         
         resp_post = await self.client.post(post_url, data=questions, headers=post_headers)
 
-        # 输出完整响应用于调试
-        logger.info(f"[study_work] 响应状态码：{resp_post.status_code}")
-        resp_text = resp_post.text[:500] if len(resp_post.text) > 500 else resp_post.text
-        logger.info(f"[study_work] 响应内容：{resp_text}")
-
-        
         if resp_post.status_code == 200:
             res_json = _safe_json(resp_post)
             if res_json.get("status"):
