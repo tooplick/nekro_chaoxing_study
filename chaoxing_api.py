@@ -49,6 +49,29 @@ AUDIO_HEADERS = {
 def get_timestamp():
     return str(int(time.time() * 1000))
 
+class AsyncRateLimiter:
+    """异步速率限制器"""
+    def __init__(self, call_interval: float):
+        self.last_call = time.time()
+        self.lock = asyncio.Lock()
+        self.call_interval = call_interval
+
+    async def limit_rate(self, random_time: bool = False, random_min: float = 0.0, random_max: float = 1.0):
+        async with self.lock:
+            import random
+            if random_time:
+                wait_time = random.uniform(random_min, random_max)
+                await asyncio.sleep(wait_time)
+            now = time.time()
+            time_elapsed = now - self.last_call
+            if time_elapsed <= self.call_interval:
+                await asyncio.sleep(self.call_interval - time_elapsed)
+                self.last_call = time.time()
+                return
+
+            self.last_call = now
+            return
+
 class AsyncChaoxing:
     """超星学习通异步 API 封装"""
 
@@ -60,8 +83,8 @@ class AsyncChaoxing:
             timeout=30.0,
             follow_redirects=True,
             limits=httpx.Limits(max_connections=50, max_keepalive_connections=10),
+            transport=httpx.AsyncHTTPTransport(retries=5)
         )
-        
         # 增加网络请求重试机制的简单包装
         _orig_get = self.client.get
         _orig_post = self.client.post
@@ -69,29 +92,29 @@ class AsyncChaoxing:
         async def _safe_get(*args, **kwargs):
             import asyncio
             from nekro_agent.api.core import logger
-            for attempt in range(3):
+            for attempt in range(5):
                 try:
                     return await _orig_get(*args, **kwargs)
                 except httpx.RequestError as e:
-                    if attempt < 2:
-                        logger.warning(f"[AsyncChaoxing] GET 请求超时/失败，正在重试 ({attempt+1}/3): {e}")
+                    if attempt < 4:
+                        logger.warning(f"[AsyncChaoxing] GET 请求超时/失败，正在重试 ({attempt+1}/5): {e}")
                         await asyncio.sleep(2 * (attempt + 1))
                     else:
-                        logger.error(f"[AsyncChaoxing] GET 请求彻底失败(已重试3次): {e}")
+                        logger.error(f"[AsyncChaoxing] GET 请求彻底失败(已重试5次): {e}")
                         raise
 
         async def _safe_post(*args, **kwargs):
             import asyncio
             from nekro_agent.api.core import logger
-            for attempt in range(3):
+            for attempt in range(5):
                 try:
                     return await _orig_post(*args, **kwargs)
                 except httpx.RequestError as e:
-                    if attempt < 2:
-                        logger.warning(f"[AsyncChaoxing] POST 请求超时/失败，正在重试 ({attempt+1}/3): {e}")
+                    if attempt < 4:
+                        logger.warning(f"[AsyncChaoxing] POST 请求超时/失败，正在重试 ({attempt+1}/5): {e}")
                         await asyncio.sleep(2 * (attempt + 1))
                     else:
-                        logger.error(f"[AsyncChaoxing] POST 请求彻底失败(已重试3次): {e}")
+                        logger.error(f"[AsyncChaoxing] POST 请求彻底失败(已重试5次): {e}")
                         raise
                         
         self.client.get = _safe_get
@@ -101,13 +124,15 @@ class AsyncChaoxing:
         self.uid = None
         self.tiku = None
         self.config = {}
+        
+        self.rate_limiter = AsyncRateLimiter(0.5)
+        self.video_log_limiter = AsyncRateLimiter(2.0)
 
     async def close(self):
         await self.client.aclose()
         
-    def limit_rate(self):
-        # 简单模拟限速
-        pass
+    async def limit_rate(self):
+        await self.rate_limiter.limit_rate()
 
     async def login(self, username: str, password: str) -> dict:
         self.account = {"username": username, "password": password}
@@ -156,14 +181,14 @@ class AsyncChaoxing:
         logger.info("[get_course_list] 正在请求主课程列表...")
         _resp = await self.client.post(_url, headers=_headers, data=_data)
         logger.info(f"[get_course_list] 主课程列表响应: status={_resp.status_code}, len={len(_resp.text)}")
-        course_list = decode_course_list(_resp.text)
+        course_list = await asyncio.to_thread(decode_course_list, _resp.text)
         logger.info(f"[get_course_list] 主目录解析到 {len(course_list)} 门课程")
 
         _interaction_url = "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/interaction"
         logger.info("[get_course_list] 正在请求课程文件夹列表...")
         _interaction_resp = await self.client.get(_interaction_url)
         logger.info(f"[get_course_list] 文件夹列表响应: status={_interaction_resp.status_code}, len={len(_interaction_resp.text)}")
-        course_folder = decode_course_folder(_interaction_resp.text)
+        course_folder = await asyncio.to_thread(decode_course_folder, _interaction_resp.text)
         logger.info(f"[get_course_list] 发现 {len(course_folder)} 个课程文件夹")
         
         for fi, folder in enumerate(course_folder):
@@ -175,7 +200,7 @@ class AsyncChaoxing:
                 "superstarClass": 0,
             }
             _resp = await self.client.post(_url, data=_data)
-            folder_courses = decode_course_list(_resp.text)
+            folder_courses = await asyncio.to_thread(decode_course_list, _resp.text)
             logger.info(f"[get_course_list] 文件夹 {fi+1} 解析到 {len(folder_courses)} 门课程")
             course_list += folder_courses
             
@@ -185,9 +210,10 @@ class AsyncChaoxing:
     async def get_course_point(self, _courseid, _clazzid, _cpi):
         _url = f"https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/studentcourse?courseid={_courseid}&clazzid={_clazzid}&cpi={_cpi}&ut=s"
         _resp = await self.client.get(_url)
-        return decode_course_point(_resp.text)
+        return await asyncio.to_thread(decode_course_point, _resp.text)
 
     async def get_job_list(self, course: dict, point: dict) -> tuple[list[dict], dict]:
+        await self.limit_rate()
         job_list = []
         job_info = {}
         cards_params = {
@@ -206,7 +232,7 @@ class AsyncChaoxing:
             if _resp.status_code != 200:
                 return [], {}
 
-            _job_list, _job_info = decode_course_card(_resp.text)
+            _job_list, _job_info = await asyncio.to_thread(decode_course_card, _resp.text)
             if _job_info.get("notOpen", False):
                 return [], _job_info
 
@@ -305,6 +331,8 @@ class AsyncChaoxing:
         headers: dict = None,
     ) -> tuple[bool, int]:
         
+        await self.video_log_limiter.limit_rate(random_time=True, random_max=2.0)
+        
         if headers is None:
             headers = VIDEO_HEADERS
         
@@ -370,6 +398,7 @@ class AsyncChaoxing:
         return False, resp.status_code
 
     async def _refresh_video_status(self, job: dict, _type: Literal["Video", "Audio"]) -> Optional[dict]:
+        await self.limit_rate()
         info_url = (
             f"https://mooc1.chaoxing.com/ananas/status/{job['objectid']}?"
             f"k={self.get_fid()}&flag=normal"
@@ -520,7 +549,7 @@ class AsyncChaoxing:
                 if report_func: await report_func(f"[{_course['title']}] 教师未创建完成测验", 100)
                 return True
                 
-            questions = decode_questions_info(resp.text)
+            questions = await asyncio.to_thread(decode_questions_info, resp.text)
             if not questions.get("questions"):
                 return True
                 
