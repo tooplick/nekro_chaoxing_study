@@ -593,7 +593,6 @@ async def _course_study_task(
                     detail=msg, 
                     **kwargs
                 )
-                await handle.notify_agent(f"[{target_username}] {msg} ({pct}%)", trigger=False)
 
             logger.info(f"[异步任务] 开始处理课程: {course['title']} (ID={course['courseId']})")
             await client.process_course(course, handle, report_func)

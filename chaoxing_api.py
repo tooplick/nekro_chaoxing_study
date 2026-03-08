@@ -492,10 +492,11 @@ class AsyncChaoxing:
                 mins_total = int(duration) // 60
                 secs_total = int(duration) % 60
                 prog_str = f"{mins_done:02d}:{secs_done:02d}/{mins_total:02d}:{secs_total:02d} ({video_pct}%)"
+                
                 await report_func(
                     f"▶️ {job_name} [{prog_str}]",
                     course_percent,
-                    current_video_progress=prog_str
+                    current_video_progress=prog_str,
                 )
                 
             await asyncio.sleep(1.0)  # 与参考项目 THRESHOLD=1 保持一致
