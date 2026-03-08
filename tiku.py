@@ -4,8 +4,9 @@ from nekro_agent.services.agent.openai import gen_openai_chat_response
 class AITiku:
     """基于 Nekro 模型组的 AI 答题系统"""
 
-    def __init__(self, group_info: dict):
+    def __init__(self, group_info: dict, timeout: float = 15.0):
         self.group_info = group_info
+        self.timeout = timeout
 
     async def query(self, question: str, options: list[str], q_type: str) -> Optional[dict]:
         """调用模型组 API 返回答案
@@ -26,23 +27,31 @@ class AITiku:
 注意：不需要任何额外的解释和抱歉的话语，只输出最终答案字符串即可。"""
 
         try:
+            import asyncio
             from nekro_agent.api.core import logger
             logger.info(f"[AITiku] 正在请求大模型答题，题型={q_type}，题目={question[:20]}...")
             
-            result = await gen_openai_chat_response(
-                model=self.group_info.get("CHAT_MODEL"),
-                messages=[{"role": "user", "content": prompt}],
-                api_key=self.group_info.get("API_KEY"),
-                base_url=self.group_info.get("BASE_URL")
+            # 增加超时限制，防止模型无响应导致测验模块卡死 60s 以上
+            result = await asyncio.wait_for(
+                gen_openai_chat_response(
+                    model=self.group_info.get("CHAT_MODEL"),
+                    messages=[{"role": "user", "content": prompt}],
+                    api_key=self.group_info.get("API_KEY"),
+                    base_url=self.group_info.get("BASE_URL")
+                ),
+                timeout=self.timeout
             )
             
             if result and result.response_content:
                 answer = result.response_content.strip()
                 logger.info(f"[AITiku] AI 返回答案: {answer}")
                 return {"success": True, "answer": answer}
-            
+                
+        except asyncio.TimeoutError:
+            from nekro_agent.api.core import logger
+            logger.warning(f"[AITiku] AI 题库答题超时 (15s)")
         except Exception as e:
             from nekro_agent.api.core import logger
-            logger.error(f"[AITiku] AI 题库答题异常: {e}")
+            logger.error(f"[AITiku] AI 题库答题异常: {str(e)[:50]}")
             
         return None

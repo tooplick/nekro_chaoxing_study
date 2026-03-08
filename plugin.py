@@ -75,6 +75,22 @@ class ChaoxingConfig(ConfigBase):
             i18n_title=i18n.i18n_text(zh_CN="AI 题库模型组", en_US="AI Model Group"),
         ).model_dump()
     )
+    
+    ai_timeout: float = Field(
+        default=15.0, title="AI 答题超时时间 (秒)",
+        description="向模型请求单道题目的最大等待时间，超时则自动随机盲猜",
+        json_schema_extra=ExtraField(
+            i18n_title=i18n.i18n_text(zh_CN="AI 答题超时时间(秒)", en_US="AI Timeout(s)"),
+        ).model_dump()
+    )
+    
+    ai_submit_threshold: int = Field(
+        default=80, title="AI 答题自动提交阈值 (%)",
+        description="当题目能被AI或题库涵盖的比例 >= 此值时才会自动提交测验，否则仅保存草稿 (设置0则全自动提交)",
+        json_schema_extra=ExtraField(
+            i18n_title=i18n.i18n_text(zh_CN="自动提交阈值(%)", en_US="Auto Submit Threshold(%)"),
+        ).model_dump()
+    )
 
 
 # 获取配置实例和存储
@@ -336,7 +352,7 @@ async def create_study_task(_ctx: AgentCtx, target_username: str, course_ids: st
 
 
 @plugin.mount_sandbox_method(
-    SandboxMethodType.AGENT, 
+    SandboxMethodType.TOOL, 
     name="list_study_tasks", 
     description="查看当前会话中所有后台课程学习任务状态"
 )
@@ -545,7 +561,8 @@ async def _course_study_task(
         
         if ai_group_info:
             from .tiku import AITiku
-            client.tiku = AITiku(ai_group_info)
+            timeout_val = float(app_config.get("ai_timeout", 15.0))
+            client.tiku = AITiku(ai_group_info, timeout=timeout_val)
         
         # 1. 查询目标课程
         logger.info(f"[异步任务] 开始获取课程列表...")

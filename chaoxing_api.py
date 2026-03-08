@@ -700,8 +700,20 @@ class AsyncChaoxing:
             q["answerField"][f'answer{q["id"]}'] = answer
             if report_func: await report_func(f"[{_course['title']}] 答题 ({i+1}/{total_questions}): {answer}", int((i+1)/total_questions*100))
 
-        # Build payload
-        questions["pyFlag"] = "" # 提交模式: 直接提交
+        # 计算覆盖率并决定是提交还是保存
+        cover_rate = (found_answers / total_questions) * 100 if total_questions > 0 else 0
+        logger.info(f"章节检测题库覆盖率： {cover_rate:.0f}%")
+        
+        submit_threshold = self.config.get("ai_submit_threshold", 80)
+        
+        if cover_rate >= submit_threshold:
+            questions["pyFlag"] = "" 
+            action_name = "提交"
+        else:
+            questions["pyFlag"] = "1"
+            action_name = "保存"
+            logger.info(f"章节检测题库覆盖率低于 {submit_threshold}%，不予自动提交，仅做保存处理")
+            if report_func: await report_func(f"[{_course['title']}] 覆盖率不足{submit_threshold}%，当前仅保存答案", 100)
         
         for q in questions["questions"]:
             questions.update({
@@ -731,14 +743,14 @@ class AsyncChaoxing:
         if resp.status_code == 200:
             res_json = resp.json()
             if res_json.get("status"):
-                if report_func: await report_func(f"[{_course['title']}] 测验提交成功: {res_json.get('msg', '')}", 100)
+                if report_func: await report_func(f"[{_course['title']}] 测验{action_name}成功: {res_json.get('msg', '')}", 100)
                 return True
             else:
-                logger.error(f"测验提交失败: {res_json.get('msg', '')}")
-                if report_func: await report_func(f"[{_course['title']}] 测验提交失败: {res_json.get('msg', '')}", 100)
+                logger.error(f"测验{action_name}失败: {res_json.get('msg', '')}")
+                if report_func: await report_func(f"[{_course['title']}] 测验{action_name}失败: {res_json.get('msg', '')}", 100)
                 return False
                 
-        if report_func: await report_func(f"[{_course['title']}] 测验提交遇到网络错误", 100)
+        if report_func: await report_func(f"[{_course['title']}] 测验{action_name}遇到网络错误", 100)
         return False
 
     async def study_emptypage(self, _course, point):
