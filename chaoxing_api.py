@@ -226,17 +226,23 @@ class AsyncChaoxing:
             "mooc2": 1
         }
 
+        seen_jobids = set()
         for _possible_num in "0123456":
             cards_params.update({"num": _possible_num})
             _resp = await self.client.get("https://mooc1.chaoxing.com/mooc-ans/knowledge/cards", params=cards_params)
             if _resp.status_code != 200:
-                return [], {}
+                continue
 
             _job_list, _job_info = await asyncio.to_thread(decode_course_card, _resp.text)
             if _job_info.get("notOpen", False):
                 return [], _job_info
 
-            job_list += _job_list
+            for _j in _job_list:
+                jid = _j.get("jobid")
+                if jid and jid not in seen_jobids:
+                    seen_jobids.add(jid)
+                    job_list.append(_j)
+                    
             job_info.update(_job_info)
 
         if not job_list:
@@ -280,24 +286,30 @@ class AsyncChaoxing:
                 if handle.is_cancelled:
                     break
                 
-                job_type = job.get("type")
-                logger.info(f"[process_course] 处理任务点: type={job_type} jobid={job.get('jobid', 'N/A')}")
-                if job_type == "video":
-                    await report_func(f"[{course['title']}] 开始视频: {point['title']} (ID: {job['jobid']})", percent, current_chapter=point['title'])
-                    result = await self.study_video(course, job, job_info, speed=self.config.get("speed", 1.0), _type="Video", report_func=report_func, course_percent=percent)
-                    if not result:
-                        # 参考原版：视频失败则尝试音频模式
-                        await report_func(f"[{course['title']}] 视频失败，尝试音频模式: {point['title']}", percent, current_chapter=point['title'])
-                        await self.study_video(course, job, job_info, speed=self.config.get("speed", 1.0), _type="Audio", report_func=report_func, course_percent=percent)
-                elif job_type == "document":
-                    await report_func(f"[{course['title']}] 开始文档: {point['title']}", percent, current_chapter=point['title'])
-                    await self.study_document(course, job)
-                elif job_type == "workid":
-                    await report_func(f"[{course['title']}] 开始测验: {point['title']}", percent, current_chapter=point['title'])
-                    await self.study_work(course, job, job_info)
-                elif job_type == "read":
-                    await report_func(f"[{course['title']}] 开始阅读任务: {point['title']}", percent, current_chapter=point['title'])
-                    await self.study_read(course, job, job_info)
+                try:
+                    job_type = job.get("type")
+                    logger.info(f"[process_course] 处理任务点: type={job_type} jobid={job.get('jobid', 'N/A')}")
+                    if job_type == "video":
+                        await report_func(f"[{course['title']}] 开始视频: {point['title']} (ID: {job['jobid']})", percent, current_chapter=point['title'])
+                        result = await self.study_video(course, job, job_info, speed=self.config.get("speed", 1.0), _type="Video", report_func=report_func, course_percent=percent)
+                        if not result:
+                            # 参考原版：视频失败则尝试音频模式
+                            await report_func(f"[{course['title']}] 视频失败，尝试音频模式: {point['title']}", percent, current_chapter=point['title'])
+                            await self.study_video(course, job, job_info, speed=self.config.get("speed", 1.0), _type="Audio", report_func=report_func, course_percent=percent)
+                    elif job_type == "document":
+                        await report_func(f"[{course['title']}] 开始文档: {point['title']}", percent, current_chapter=point['title'])
+                        await self.study_document(course, job)
+                    elif job_type == "workid":
+                        await report_func(f"[{course['title']}] 开始测验: {point['title']}", percent, current_chapter=point['title'])
+                        await self.study_work(course, job, job_info, report_func=report_func)
+                    elif job_type == "read":
+                        await report_func(f"[{course['title']}] 开始阅读任务: {point['title']}", percent, current_chapter=point['title'])
+                        await self.study_read(course, job, job_info)
+                except Exception as e:
+                    logger.error(f"[process_course] 任务 {job.get('jobid')} 发生异常，已跳过: {e}")
+                    import traceback
+                    logger.debug(traceback.format_exc())
+                    continue
                 
             # 章节完成通知 AI (当 notify_level 为 Chapter 时才通知)
             if self.config.get("notify_level", "Chapter") == "Chapter":
