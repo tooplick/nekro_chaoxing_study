@@ -4,9 +4,10 @@ from nekro_agent.services.agent.openai import gen_openai_chat_response
 class AITiku:
     """基于 Nekro 模型组的 AI 答题系统"""
 
-    def __init__(self, group_info: dict, timeout: float = 15.0):
+    def __init__(self, group_info: dict, timeout: float = 15.0, store=None):
         self.group_info = group_info
         self.timeout = timeout
+        self.store = store
 
     async def query(self, question: str, options: list[str], q_type: str) -> Optional[dict]:
         """调用模型组 API 返回答案
@@ -15,21 +16,41 @@ class AITiku:
         if not self.group_info:
             return None
 
-        # 构造类似原项目的高精确度 Prompt 结构
         import re
         import json
+        import hashlib
         
-        def remove_md_json_wrapper(md_str):
-            pattern = r'^\s*```(?:json)?\s*(.*?)\s*```\s*$'
-            match = re.search(pattern, md_str, re.DOTALL)
-            return match.group(1).strip() if match else md_str.strip()
-
         # 去除选项字母，防止大模型直接输出字母而非内容 (参照原项目)
         if options:
             cleaned_options = [re.sub(r"^[A-Z]\.?、?\s*", "", option) for option in options]
             options_text = "\n".join(cleaned_options)
         else:
             options_text = ""
+            
+        # 尝试命中本地题库
+        raw_text_for_hash = question.strip()
+        if options:
+            raw_text_for_hash += "|" + "|".join([o.strip() for o in cleaned_options])
+            
+        question_hash = hashlib.md5(raw_text_for_hash.encode('utf-8')).hexdigest()
+        store_key = f"tiku_{question_hash}"
+        
+        if self.store:
+            try:
+                cached_ans = await self.store.get(store_key=store_key)
+                if cached_ans:
+                    from nekro_agent.api.core import logger
+                    logger.info(f"[AITiku] 命中本地题库直接返回答案 (hash: {question_hash[:8]}...)")
+                    return {"success": True, "answer": cached_ans}
+            except Exception as e:
+                from nekro_agent.api.core import logger
+                logger.warning(f"[AITiku] 读取本地题库异常: {e}")
+
+        # 构造类似原项目的高精确度 Prompt 结构
+        def remove_md_json_wrapper(md_str):
+            pattern = r'^\s*```(?:json)?\s*(.*?)\s*```\s*$'
+            match = re.search(pattern, md_str, re.DOTALL)
+            return match.group(1).strip() if match else md_str.strip()
 
         sys_prompt = ""
         if q_type == "single":
@@ -81,6 +102,16 @@ class AITiku:
                     answer = raw_out
                     
                 logger.info(f"[AITiku] AI 返回答案: {answer}")
+                
+                # 保存到本地题库
+                if self.store:
+                    try:
+                        await self.store.set(store_key=store_key, value=answer)
+                        logger.info("[AITiku] 答案已保存至题库")
+                    except Exception as e:
+                        from nekro_agent.api.core import logger
+                        logger.warning(f"[AITiku] 保存题库异常: {e}")
+                        
                 return {"success": True, "answer": answer}
             else:
                 logger.error(f"[AITiku] 大模型接口未返回任何有效内容，返回对象: {result}")

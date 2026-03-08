@@ -548,7 +548,7 @@ async def _course_study_task(
         if ai_group_info:
             from .tiku import AITiku
             timeout_val = float(app_config.get("ai_timeout", 15.0))
-            client.tiku = AITiku(ai_group_info, timeout=timeout_val)
+            client.tiku = AITiku(ai_group_info, timeout=timeout_val, store=store)
         
         # 1. 查询目标课程
         logger.info(f"[异步任务] 开始获取课程列表...")
