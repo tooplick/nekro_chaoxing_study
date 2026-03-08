@@ -352,7 +352,7 @@ async def create_study_task(_ctx: AgentCtx, target_username: str, course_ids: st
 
 
 @plugin.mount_sandbox_method(
-    SandboxMethodType.TOOL, 
+    SandboxMethodType.AGENT, 
     name="list_study_tasks", 
     description="查看当前会话中所有后台课程学习任务状态"
 )
