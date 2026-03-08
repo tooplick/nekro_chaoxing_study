@@ -76,6 +76,18 @@ Creative Principles
 ▸ probability: NEGLIGIBLE
 ```
 
+> Tips:
+> 如果你的ai还是不愿意帮你刷课，可以使用`/exec`手动调用插件
+
+```
+/exec get_courses("手机号", "密码")
+/exec create_study_task("手机号", "课程ID", "密码")  # 课程ID留空则全刷
+/exec list_study_tasks()
+/exec get_running_tasks()
+/exec cancel_study_task("任务ID")
+/exec stop_all_study_tasks()
+```
+
 ##  免责声明 (Disclaimer)
 
 本项目仅供 Python 爬虫与逆向学习交流，以及在 Nekro Agent 架构下验证长期异步任务应用落地效果。使用者请自行承担使用此工具带来的任何学术诚信风险及账号异常风险。

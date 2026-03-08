@@ -536,7 +536,68 @@ class AsyncChaoxing:
         return _resp.status_code == 200
 
     async def study_work(self, _course, _job, _job_info, report_func=None):
-        # Retry wrap
+        if self.tiku is not None and getattr(self.tiku, "DISABLE", False):
+            return True
+
+        def random_answer(q_options: str, q_type: str) -> str:
+            import random
+            answer = ""
+            if not q_options:
+                return answer
+
+            if q_type == "multiple":
+                _op_list = [o for o in re.split(r'[\n,，|\r\t#*\-_+@~/\.\&、]', q_options) if o.strip()]
+                if not _op_list:
+                    return answer
+                available_options = len(_op_list)
+                select_count = 0
+                if available_options <= 1:
+                    select_count = available_options
+                else:
+                    max_possible = min(4, available_options)
+                    min_possible = min(2, available_options)
+                    weights_map = {
+                        2: [1.0],
+                        3: [0.3, 0.7],
+                        4: [0.1, 0.5, 0.4],
+                        5: [0.1, 0.4, 0.3, 0.2],
+                    }
+                    weights = weights_map.get(max_possible, [0.3, 0.4, 0.3])
+                    possible_counts = list(range(min_possible, max_possible + 1))
+                    weights = weights[:len(possible_counts)]
+                    weights_sum = sum(weights)
+                    if weights_sum > 0:
+                        weights = [w / weights_sum for w in weights]
+                    select_count = random.choices(possible_counts, weights=weights, k=1)[0]
+                selected_options = random.sample(_op_list, select_count) if select_count > 0 else []
+                for option in selected_options:
+                    answer += option[:1]
+                answer = "".join(sorted(answer))
+            elif q_type == "single":
+                answer = random.choice(q_options.split("\n"))[:1]
+            elif q_type == "judgement":
+                answer = "true" if random.choice([True, False]) else "false"
+            return answer
+
+        def multi_cut(answer: str):
+            res = [o for o in re.split(r'[\n,，|\r\t#*\-_+@~/\.\&、\s]', answer) if o.strip()]
+            if not res:
+                return None
+            return res
+
+        def clean_res(res):
+            cleaned_res = []
+            if isinstance(res, str):
+                res = [res]
+            for c in res:
+                cleaned = re.sub(r'^[A-Za-z]|[.,!?;:，。！？；：]', '', c) if len(c) > 1 else c
+                cleaned_res.append(cleaned.strip())
+            return cleaned_res
+
+        def is_subsequence(a, o):
+            iter_o = iter(o)
+            return all(c in iter_o for c in a)
+
         _url = "https://mooc1.chaoxing.com/mooc-ans/api/work"
         _params = {
             "api": "1",
@@ -556,18 +617,28 @@ class AsyncChaoxing:
             "courseid": _course["courseId"],
         }
         
-        try:
-            resp = await self.client.get(_url, params=_params)
-            if "教师未创建完成该测验" in resp.text:
-                if report_func: await report_func(f"[{_course['title']}] 教师未创建完成测验", 100)
-                return True
+        retries = 0
+        max_retries = 3
+        questions = {}
+        
+        while retries < max_retries:
+            try:
+                resp = await self.client.get(_url, params=_params)
+                if "教师未创建完成该测验" in resp.text:
+                    if report_func: await report_func(f"[{_course['title']}] 教师未创建完成测验", 100)
+                    return True
                 
-            questions = await asyncio.to_thread(decode_questions_info, resp.text)
-            if not questions.get("questions"):
-                return True
-                
-        except Exception as e:
-            if report_func: await report_func(f"[{_course['title']}] 读取测验失败", 100)
+                questions = await asyncio.to_thread(decode_questions_info, resp.text)
+                if resp.status_code == 200 and questions.get("questions"):
+                    break
+                logger.warning(f"无效响应, 重试中... ({retries + 1}/{max_retries})")
+            except Exception as e:
+                logger.warning(f"请求失败: {str(e)[:50]}, 重试中... ({retries + 1}/{max_retries})")
+            retries += 1
+            await asyncio.sleep(1 * (2 ** retries))
+            
+        if not questions or not questions.get("questions"):
+            if report_func: await report_func(f"[{_course['title']}] 读取测验失败或题库为空", 100)
             return False
 
         total_questions = len(questions["questions"])
@@ -578,46 +649,60 @@ class AsyncChaoxing:
         if report_func: await report_func(f"[{_course['title']}] 正在{mode_label}，共 {total_questions} 题", 0)
 
         for i, q in enumerate(questions["questions"]):
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.5) # Reduced delay slightly
+            answer = ""
             
-            # 尝试 AI 答题，无 tiku 或请求失败时回退到随机答案
             res = None
             if has_ai:
                 try:
+                    # Tiku API expects dict or fields, we pass dict matching base.py
                     res = await self.tiku.query(q["title"], q["options"], q["type"])
+                    res = res["answer"] if res and res.get("success") else None
                 except Exception:
                     res = None
             
-            answer = ""
-            if not res or not res.get("success"):
-                import random
-                if q["type"] == "judgement":
-                    answer = "true" if random.choice([True, False]) else "false"
-                elif q["options"]:
-                    answer = q["options"][0][:1] if isinstance(q["options"], list) else "A"
+            if not res:
+                answer = random_answer(q["options"], q["type"])
                 q[f'answerSource{q["id"]}'] = "random"
             else:
-                answer = res["answer"]
                 if q["type"] == "multiple":
-                    # 去除空格等，仅保留选项字母，并排序
-                    answer = "".join(sorted(re.findall(r'[A-Za-z]', answer)))
+                    options_list = multi_cut(q["options"])
+                    res_list = multi_cut(res)
+                    if res_list is not None and options_list is not None:
+                        for _a in clean_res(res_list):
+                            for o in options_list:
+                                if is_subsequence(_a, o):
+                                    answer += o[:1]
+                                    break
+                        answer = "".join(sorted(answer))
                 elif q["type"] == "single":
-                    answer = re.sub(r'[^A-Za-z]', '', answer)
-                    if answer: answer = answer[0]
+                    options_list = multi_cut(q["options"])
+                    if options_list is not None:
+                        t_res = clean_res(res)
+                        for o in options_list:
+                            if t_res and is_subsequence(t_res[0], o):
+                                answer = o[:1]
+                                break
                 elif q["type"] == "judgement":
-                    answer = "true" if "正确" in answer or "true" in answer.lower() else "false"
-                    
+                    answer = "true" if ("正确" in res or "true" in res.lower()) else "false"
+                elif q["type"] == "completion":
+                    answer = res if isinstance(res, str) else "".join(res)
+                else:
+                    answer = res
+
                 if not answer:
+                    answer = random_answer(q["options"], q["type"])
                     q[f'answerSource{q["id"]}'] = "random"
                 else:
                     q[f'answerSource{q["id"]}'] = "cover"
                     found_answers += 1
             
             q["answerField"][f'answer{q["id"]}'] = answer
-            if report_func: await report_func(f"[{_course['title']}] 答题进度 ({i+1}/{total_questions}): {answer}", int((i+1)/total_questions*100))
+            if report_func: await report_func(f"[{_course['title']}] 答题 ({i+1}/{total_questions}): {answer}", int((i+1)/total_questions*100))
 
         # Build payload
-        questions["pyFlag"] = "" # 直接提交
+        questions["pyFlag"] = "" # 提交模式: 直接提交
+        
         for q in questions["questions"]:
             questions.update({
                 f'answer{q["id"]}': q["answerField"][f'answer{q["id"]}'],
@@ -629,17 +714,31 @@ class AsyncChaoxing:
         post_url = "https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNew"
         post_headers = {
             "Host": "mooc1.chaoxing.com",
+            "sec-ch-ua-platform": '"Windows"',
             "X-Requested-With": "XMLHttpRequest",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "sec-ch-ua": '"Chromium";v="129"',
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "Origin": "https://mooc1.chaoxing.com",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Dest": "empty",
         }
+        
         resp = await self.client.post(post_url, data=questions, headers=post_headers)
         
-        if resp.status_code == 200 and resp.json().get("status"):
-            if report_func: await report_func(f"[{_course['title']}] 测验提交成功", 100)
-            return True
-            
-        if report_func: await report_func(f"[{_course['title']}] 测验提交失败", 100)
+        if resp.status_code == 200:
+            res_json = resp.json()
+            if res_json.get("status"):
+                if report_func: await report_func(f"[{_course['title']}] 测验提交成功: {res_json.get('msg', '')}", 100)
+                return True
+            else:
+                logger.error(f"测验提交失败: {res_json.get('msg', '')}")
+                if report_func: await report_func(f"[{_course['title']}] 测验提交失败: {res_json.get('msg', '')}", 100)
+                return False
+                
+        if report_func: await report_func(f"[{_course['title']}] 测验提交遇到网络错误", 100)
         return False
 
     async def study_emptypage(self, _course, point):
