@@ -46,8 +46,8 @@ def resource_path(relative_path: str) -> str:
         # PyInstaller创建临时文件夹，定位路径
         base_path = sys._MEIPASS
     except Exception:
-        # 非打包环境，使用当前目录
-        base_path = os.path.abspath(".")
+        # 非打包环境，使用当前模块所在目录
+        base_path = os.path.dirname(os.path.abspath(__file__))
     
     return os.path.join(base_path, relative_path)
 
@@ -57,7 +57,7 @@ class FontHashDAO:
     字体哈希数据访问对象，负责管理字体哈希映射表
     """
 
-    def __init__(self, file_path: str = "resource/font_map_table.json"):
+    def __init__(self, file_path: str = "font_map_table.json"):
         """
         初始化字体哈希数据访问对象
 
