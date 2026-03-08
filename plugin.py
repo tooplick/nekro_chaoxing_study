@@ -1,6 +1,6 @@
 import asyncio
 from typing import AsyncGenerator, Literal, Any
-from pydantic import Field, field_validator
+from pydantic import Field
 
 from nekro_agent.api import i18n
 from nekro_agent.api.core import logger
@@ -17,7 +17,7 @@ plugin = NekroPlugin(
     module_name="nekro_chaoxing_study",
     description="自动完成超星学习通课程任务，支持视频、文档、测验等。支持多账号并发，提供灵活的后台任务能力。",
     version="1.0.0",
-    author="QeQian",
+    author="GeQian",
     url="https://github.com/tooplick/nekro_chaoxing_study",
 )
 
@@ -51,21 +51,7 @@ class ChaoxingConfig(ConfigBase):
         ).model_dump()
     )
     
-    @field_validator("notify_level", mode="before")
-    @classmethod
-    def _convert_old_notify_level(cls, v: Any) -> Any:
-        # 向下兼容以前的 1, 2, 3 数字配置
-        if isinstance(v, int) or (isinstance(v, str) and v.isdigit()):
-            v = int(v)
-            if v == 1:
-                return "Chapter"
-            elif v == 2:
-                return "Course"
-            elif v == 3:
-                return "None"
-        return v
-    
-    
+
     ai_model_group: str = Field(
         default="default", title="AI 题库模型组",
         description="选择用于答题的系统大模型组",
