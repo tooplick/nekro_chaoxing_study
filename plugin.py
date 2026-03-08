@@ -63,7 +63,7 @@ class ChaoxingConfig(ConfigBase):
     )
     
     ai_timeout: float = Field(
-        default=15.0, title="AI 答题超时时间 (秒)",
+        default=60.0, title="AI 答题超时时间 (秒)",
         description="向模型请求单道题目的最大等待时间，超时则自动随机盲猜",
         json_schema_extra=ExtraField(
             i18n_title=i18n.i18n_text(zh_CN="AI 答题超时时间(秒)", en_US="AI Timeout(s)"),

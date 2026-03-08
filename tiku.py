@@ -82,12 +82,19 @@ class AITiku:
                     
                 logger.info(f"[AITiku] AI 返回答案: {answer}")
                 return {"success": True, "answer": answer}
+            else:
+                logger.error(f"[AITiku] 大模型接口未返回任何有效内容，返回对象: {result}")
                 
         except asyncio.TimeoutError:
             from nekro_agent.api.core import logger
-            logger.warning(f"[AITiku] AI 题库答题超时 (15s)")
+            logger.warning(f"[AITiku] AI 题库答题超时 ({self.timeout}s)")
         except Exception as e:
             from nekro_agent.api.core import logger
-            logger.error(f"[AITiku] AI 题库答题异常: {str(e)[:50]}")
+            import traceback
+            logger.error(f"[AITiku] AI 题库答题请求失败，出现异常: {str(e)}")
+            logger.error(f"[AITiku] 请求失败详情:\n{traceback.format_exc()}")
             
+        # 防止抛出异常或返回 None 导致无日志追踪
+        from nekro_agent.api.core import logger
+        logger.error(f"[AITiku] 题库响应结果异常或失败，放弃该题 (题目: {question[:20]}...)")
         return None
