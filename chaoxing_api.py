@@ -650,25 +650,33 @@ class AsyncChaoxing:
         if report_func: await report_func(f"[{_course['title']}] 正在{mode_label}，共 {total_questions} 题", 0)
 
         for i, q in enumerate(questions["questions"]):
-            await asyncio.sleep(0.5) # Reduced delay slightly
+            await asyncio.sleep(0.5)
             answer = ""
+            qid = q["id"]
+            
+            # 记录题目和选项用于调试
+            logger.info(f"[study_work] 题目 {i+1}/{total_questions} (ID:{qid}): type={q['type']}, title={q['title'][:30]}...")
+            logger.info(f"[study_work] 选项：{q['options'][:100]}...")
             
             res = None
             if has_ai:
                 try:
-                    # Tiku API expects dict or fields, we pass dict matching base.py
                     res = await self.tiku.query(q["title"], q["options"], q["type"])
                     res = res["answer"] if res and res.get("success") else None
-                except Exception:
+                    logger.info(f"[study_work] AI 答案：{res}")
+                except Exception as e:
+                    logger.warning(f"[study_work] AI 答题失败：{e}")
                     res = None
             
             if not res:
+                logger.info(f"[study_work] 无 AI 答案，使用随机选择")
                 answer = random_answer(q["options"], q["type"])
-                q[f'answerSource{q["id"]}'] = "random"
+                q[f'answerSource{qid}'] = "random"
             else:
                 if q["type"] == "multiple":
                     options_list = multi_cut(q["options"])
                     res_list = multi_cut(res)
+                    logger.info(f"[study_work] 多选切割：options={options_list}, res={res_list}")
                     if res_list is not None and options_list is not None:
                         for _a in clean_res(res_list):
                             for o in options_list:
@@ -678,25 +686,34 @@ class AsyncChaoxing:
                         answer = "".join(sorted(answer))
                 elif q["type"] == "single":
                     options_list = multi_cut(q["options"])
+                    logger.info(f"[study_work] 单选切割：options={options_list}, res={res}")
                     if options_list is not None:
                         t_res = clean_res(res)
+                        logger.info(f"[study_work] clean_res 后：t_res={t_res}")
                         for o in options_list:
                             if t_res and is_subsequence(t_res[0], o):
                                 answer = o[:1]
+                                logger.info(f"[study_work] 匹配成功：{t_res[0]} in {o} -> answer={answer}")
                                 break
+                        if not answer:
+                            logger.warning(f"[study_work] 匹配失败，使用随机选择")
                 elif q["type"] == "judgement":
                     answer = "true" if ("正确" in res or "true" in res.lower()) else "false"
                 elif q["type"] == "completion":
                     answer = res if isinstance(res, str) else "".join(res)
                 else:
+                    logger.warning(f"[study_work] 未知题型：{q['type']}，使用原始答案")
                     answer = res
 
                 if not answer:
+                    logger.info(f"[study_work] 答案为空，使用随机选择")
                     answer = random_answer(q["options"], q["type"])
-                    q[f'answerSource{q["id"]}'] = "random"
+                    q[f'answerSource{qid}'] = "random"
                 else:
-                    q[f'answerSource{q["id"]}'] = "cover"
+                    q[f'answerSource{qid}'] = "cover"
                     found_answers += 1
+            
+            logger.info(f"[study_work] 最终答案：{answer}")
             
             q["answerField"][f'answer{q["id"]}'] = answer
             if report_func: await report_func(f"[{_course['title']}] 答题 ({i+1}/{total_questions}): {answer}", int((i+1)/total_questions*100))
