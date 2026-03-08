@@ -716,11 +716,21 @@ class AsyncChaoxing:
             logger.info(f"章节检测题库覆盖率低于 {submit_threshold}%，不予自动提交，仅做保存处理")
             if report_func: await report_func(f"[{_course['title']}] 覆盖率不足{submit_threshold}%，当前仅保存答案", 100)
         
-        for q in questions["questions"]:
-            questions.update({
-                f'answer{q["id"]}': q["answerField"][f'answer{q["id"]}'],
-                f'answertype{q["id"]}': q["answerField"][f'answertype{q["id"]}'],
-            })
+        # 组建提交表单 - 参考 chaoxing 项目 base.py:838-854
+        if questions.get("pyFlag") == "1":
+            # 保存模式：只填充有答案的题目，没有答案的留空
+            for q in questions["questions"]:
+                questions.update({
+                    f'answer{q["id"]}': q["answerField"][f'answer{q["id"]}'] if q.get(f'answerSource{q["id"]}') == "cover" else '',
+                    f'answertype{q["id"]}': q["answerField"][f'answertype{q["id"]}'],
+                })
+        else:
+            # 提交模式：填充所有答案
+            for q in questions["questions"]:
+                questions.update({
+                    f'answer{q["id"]}': q["answerField"][f'answer{q["id"]}'],
+                    f'answertype{q["id"]}': q["answerField"][f'answertype{q["id"]}'],
+                })
             
         del questions["questions"]
         
@@ -729,21 +739,32 @@ class AsyncChaoxing:
             "Host": "mooc1.chaoxing.com",
             "sec-ch-ua-platform": '"Windows"',
             "X-Requested-With": "XMLHttpRequest",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
             "Accept": "application/json, text/javascript, */*; q=0.01",
-            "sec-ch-ua": '"Chromium";v="129"',
+            "sec-ch-ua": '"Microsoft Edge";v="129", "Not=A?Brand";v="8", "Chromium";v="129"',
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "sec-ch-ua-mobile": "?0",
             "Origin": "https://mooc1.chaoxing.com",
             "Sec-Fetch-Site": "same-origin",
             "Sec-Fetch-Mode": "cors",
             "Sec-Fetch-Dest": "empty",
-            "Referer": str(resp.url),
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,ja;q=0.5"
         }
         
         logger.info(f"[study_work] 准备 {action_name} 测验，共 {total_questions} 题。使用URL: {post_url}")
-        logger.debug(f"[study_work] {action_name} 请求数据(部分): pyFlag={questions.get('pyFlag')} form_keys_count={len(questions)}")
+        logger.info(f"[study_work] pyFlag={questions.get('pyFlag')!r}")
+        answer_keys = [k for k in questions.keys() if k.startswith('answer') and k != 'answerwqbid']
+        logger.info(f"[study_work] 答案数量：{len(answer_keys)}, 示例：{answer_keys[:3]}")
+        for ak in answer_keys[:3]:
+            logger.info(f"[study_work] {ak}={questions.get(ak, 'N/A')!r}")
         
         resp_post = await self.client.post(post_url, data=questions, headers=post_headers)
+
+        # 输出完整响应用于调试
+        logger.info(f"[study_work] 响应状态码：{resp_post.status_code}")
+        resp_text = resp_post.text[:500] if len(resp_post.text) > 500 else resp_post.text
+        logger.info(f"[study_work] 响应内容：{resp_text}")
+
         
         if resp_post.status_code == 200:
             res_json = _safe_json(resp_post)
