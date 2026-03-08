@@ -536,6 +536,7 @@ class AsyncChaoxing:
         return _resp.status_code == 200
 
     async def study_work(self, _course, _job, _job_info, report_func=None):
+        from nekro_agent.api.core import logger
         if self.tiku is not None and getattr(self.tiku, "DISABLE", False):
             return True
 
