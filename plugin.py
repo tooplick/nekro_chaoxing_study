@@ -604,7 +604,7 @@ async def _course_study_task(
             # 单门课程完成通知 AI 及其用户 (当 notify_level 为 Chapter 或 Course 时)
             if app_config.get("notify_level", "Chapter") in ("Chapter", "Course"):
                 await handle.notify_agent(
-                    f"🎉 课程学习完毕: {course['title']}\n当前进度: {ci+1}/{total} 门",
+                    f"🎉 课程学习完毕: {course['title']}\n当前进度: {ci+1}/{total} 门\n任务ID: {tid}\n学习账号: {target_username}",
                     trigger=True
                 )
             
